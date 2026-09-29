@@ -6,6 +6,9 @@ const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 export const cloudEnabled = Boolean(url && key);
 const supabase = cloudEnabled ? createClient(url!, key!) : null;
 type StoredProject = Project & { photo?: Blob };
+type BackupProject = Omit<StoredProject, "photo"> & {
+  photo_data: string | null;
+};
 
 async function database() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -155,6 +158,54 @@ export async function saveProject(
     throw error;
   }
   if (error) throw error;
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () =>
+      reject(new Error("A saved photo could not be included in the backup."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+export async function exportLocalData(): Promise<Blob> {
+  if (supabase)
+    throw new Error(
+      "Local backup is available when Bouldero is using device storage.",
+    );
+  const [projects, sessions, attempts] = await Promise.all([
+    localRequest<StoredProject[]>("projects", "readonly", (store) =>
+      store.getAll(),
+    ),
+    localRequest<ClimbingSession[]>("sessions", "readonly", (store) =>
+      store.getAll(),
+    ),
+    localRequest<Attempt[]>("attempts", "readonly", (store) => store.getAll()),
+  ]);
+  const backupProjects: BackupProject[] = await Promise.all(
+    projects.map(async ({ photo, ...project }) => ({
+      ...project,
+      notes: "",
+      purpose: "project",
+      photo_data: photo ? await blobToDataUrl(photo) : null,
+    })),
+  );
+  return new Blob(
+    [
+      JSON.stringify({
+        kind: "bouldero-backup",
+        version: 1,
+        exported_at: new Date().toISOString(),
+        source_version: "0.2.1",
+        projects: backupProjects,
+        sessions,
+        attempts,
+      }),
+    ],
+    { type: "application/json" },
+  );
 }
 
 export async function updateProjectStatus(
