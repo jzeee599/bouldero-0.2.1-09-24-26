@@ -4,6 +4,7 @@ import HoldMap from "./hold-map";
 import {
   cloudEnabled,
   endSession,
+  exportLocalData,
   listAttempts,
   listProjects,
   listSessions,
@@ -406,6 +407,25 @@ export default function Bouldero() {
           ? e.message
           : "Could not save the line. Please try again.",
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function downloadBackup() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const blob = await exportLocalData();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bouldero-0.2.1-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setNotice("Backup downloaded with your photos and climbing history.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not export your data.");
     } finally {
       setBusy(false);
     }
@@ -1117,10 +1137,18 @@ export default function Bouldero() {
         </span>
       </footer>
       {!cloudEnabled && (
-        <p className="local-note">
-          Local mode · Lines stay in this browser. Clearing site data removes
-          them. Connect Supabase for cloud storage.
-        </p>
+        <section className="migration-export" aria-labelledby="migration-title">
+          <div>
+            <strong id="migration-title">Move your 0.2.1 data</strong>
+            <p>
+              Download every line, photo, session, and attempt, then import the
+              file into Bouldero 0.2.2.
+            </p>
+          </div>
+          <button className="button secondary" disabled={busy} onClick={downloadBackup}>
+            {busy ? "Preparing backup…" : "Export backup"} <Arrow />
+          </button>
+        </section>
       )}
       {notice && (
         <div className="toast" role="status">
